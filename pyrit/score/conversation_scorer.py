@@ -231,8 +231,9 @@ class ConversationScorer(MessageScorer, ABC):
         / ``[END {ROLE} TURN i]`` delimiters and every content line is indented
         two spaces, so a forged role-prefix or fence closer inside stored
         content can never start at column 0. Content is preserved verbatim
-        modulo the indent. splitlines() (not split("\\n")) so every Unicode
-        line-break variant is indented too.
+        modulo the indent: ``splitlines(keepends=True)`` retains original line
+        separators and trailing newlines while indenting every Unicode line-break
+        variant. The extra newline before the closing fence belongs to the framing.
 
         Args:
             pieces (tuple[MessagePiece, ...]): The conversation pieces to render.
@@ -255,7 +256,7 @@ class ConversationScorer(MessageScorer, ABC):
                 else piece.converted_value
             )
             fence = f"{role.upper()} TURN {turn_index}"
-            body = "\n".join(("  " + line) if line else "" for line in text.splitlines())
+            body = "".join("  " + line for line in text.splitlines(keepends=True))
             lines.append(f"[BEGIN {fence}]\n{body}\n[END {fence}]\n")
             turn_index += 1
         return "".join(lines)
@@ -368,7 +369,7 @@ def create_conversation_scorer(
             """
             identifier = self._create_identifier(
                 params={
-                    "rendering_version": 1,
+                    "rendering_version": 2,
                     "supported_roles": self._validator._supported_roles,
                     "should_score_blocked_content": self.should_score_blocked_content,
                 },
