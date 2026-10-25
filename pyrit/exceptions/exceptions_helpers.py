@@ -121,7 +121,9 @@ def extract_json_from_string(response_msg: str) -> str:
     no single literal can be trusted as the response, so the original string is
     returned unchanged (making the caller fail as invalid JSON and retry).
 
-    Identical repeated literals (a model stutter) are accepted.
+    Equivalent repeated literals (a model stutter) are accepted, ignoring
+    whitespace and object key order but preserving JSON value types.
+    Decoder-limit failures leave the original string unchanged.
 
     Args:
         response_msg (str): The response message to check.
@@ -130,16 +132,16 @@ def extract_json_from_string(response_msg: str) -> str:
         str: The extracted JSON string if found, otherwise the original string.
 
     """
-    candidates = _top_level_json_candidates(response_msg)
-    if not candidates:
-        return response_msg
-    if len(candidates) == 1:
-        return candidates[0]
     try:
-        parsed = [json.loads(candidate) for candidate in candidates]
-    except json.JSONDecodeError:
+        candidates = _top_level_json_candidates(response_msg)
+        if not candidates:
+            return response_msg
+        if len(candidates) == 1:
+            return candidates[0]
+        normalized = [json.dumps(json.loads(candidate), sort_keys=True) for candidate in candidates]
+    except (ValueError, RecursionError):
         return response_msg
-    if all(candidate == parsed[0] for candidate in parsed[1:]):
+    if all(candidate == normalized[0] for candidate in normalized[1:]):
         return candidates[0]
     return response_msg
 
@@ -152,7 +154,7 @@ def _top_level_json_candidates(response_msg: str) -> list[str]:
         response_msg (str): The response message to scan.
 
     Returns:
-        str: The list of top-level JSON literal substrings, outermost-first at each position.
+        list[str]: The top-level JSON literal substrings, outermost-first at each position.
     """
     decoder = json.JSONDecoder()
     found: list[str] = []
@@ -189,10 +191,10 @@ def remove_markdown_json(response_msg: str) -> str:
     try:
         json.loads(response_msg)
         return response_msg
-    except json.JSONDecodeError:
+    except (ValueError, RecursionError):
         response_msg = extract_json_from_string(response_msg)
         try:
             json.loads(response_msg)
             return response_msg
-        except json.JSONDecodeError:
+        except (ValueError, RecursionError):
             return f"Invalid JSON response: {response_msg}"
